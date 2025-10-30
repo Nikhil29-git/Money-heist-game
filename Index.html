@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Money Heist — Story Mode</title>
+  <style>
+    :root{
+      --bg1:#12060a; --bg2:#2b0b0f; --accent:#e63946; --muted:#c9ccd1;
+      --panel: rgba(0,0,0,0.55);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Roboto,"Noto Sans",sans-serif;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--muted);-webkit-font-smoothing:antialiased}
+    .wrap{max-width:980px;margin:18px auto;padding:12px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.16));border-radius:12px;padding:12px;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+    header{display:flex;justify-content:space-between;align-items:center}
+    h1{color:#fff;font-size:18px;margin:0}
+    .meta{color:var(--muted);font-size:13px}
+    .canvasHolder{position:relative;margin-top:12px;border-radius:10px;overflow:hidden}
+    canvas{display:block;width:100%;height:auto;background:#0b0608}
+    .hud{display:flex;gap:10px;align-items:center;color:var(--muted);font-weight:600}
+    .btn{background:var(--accent);border:none;color:white;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer}
+    .small{padding:6px 10px;font-size:13px}
+    /* overlay story */
+    .overlayFull{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+    .storyBox{width:86%;max-width:760px;background:var(--panel);padding:18px;border-radius:12px;color:#fff;text-align:left}
+    .storyTitle{font-size:20px;margin:0 0 6px 0}
+    .storyText{color:#ddd;font-size:15px;line-height:1.45}
+    .storyFooter{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+    .mutedSmall{color:#c9ccd1;font-size:13px}
+    /* responsive notes */
+    @media (max-width:640px){
+      .storyBox{width:94%}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div>
+          <h1>Money Heist — Story Mode</h1>
+          <div class="meta">Story → Mission → Action. Mobile friendly.</div>
+        </div>
+        <div class="hud">
+          <div>Score: <span id="score">0</span></div>
+          <div>Lives: <span id="lives">3</span></div>
+          <div>Level: <span id="level">1</span></div>
+        </div>
+      </header>
+
+      <div class="canvasHolder" id="stage">
+        <canvas id="game" width="900" height="540"></canvas>
+
+        <!-- Story overlay (shown first) -->
+        <div id="storyOverlay" class="overlayFull">
+          <div class="storyBox" id="storyBox">
+            <h2 class="storyTitle" id="storyTitle">Mission Briefing — Professor</h2>
+            <div class="storyText" id="storyText">
+              शुभकामनाएँ। तुम्हें अब Professor की टीम का हिस्सा माना गया है। मिशन शुरू करने से पहले पूरी योजना सुन लो...
+            </div>
+            <div class="storyFooter">
+              <div class="mutedSmall" id="storyProgress">1 / 4</div>
+              <div>
+                <button id="prevStory" class="btn small" style="background:#6b7280">Prev</button>
+                <button id="nextStory" class="btn small">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pause / Game Over overlay (hidden) -->
+        <div id="pauseOverlay" class="overlayFull" style="display:none;pointer-events:auto;align-items:flex-start;padding-top:60px">
+          <div class="storyBox" style="text-align:center">
+            <h2 id="pauseTitle" class="storyTitle">Mission Paused</h2>
+            <div class="storyText" id="pauseText">Game paused.</div>
+            <div style="margin-top:12px">
+              <button id="resumeBtn" class="btn small">Resume</button>
+              <button id="restartBtn" class="btn small" style="background:#6b7280">Restart</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <div style="display:flex;gap:8px">
+          <button id="muteBtn" class="btn small">Mute</button>
+          <button id="helpBtn" class="btn small" style="background:#6b7280">Help</button>
+        </div>
+        <div class="meta">Tip: Use Arrow / WASD, or drag on mobile.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* Story-Mode Money Heist — single-file
+   - Story overlay with multiple cards
+   - Gameplay afterward (collect briefcase)
+   - Mobile touch + keyboard
+   - WebAudio simple background loop + SFX
+*/
+
+/* ========== Story Data ========== */
+const storyCards = [
+  {
+    title: "Mission Briefing — Professor",
+    text: "हमारा लक्ष्य एक छोटा लेकिन ख़ास briefcase है, जिस पर ग़ज़ब का data है। तुम टीम के लिए चुने गए हो। Professor ने plan बताया — तमीज़ से काम लेना होगा।"
+  },
+  {
+    title: "Team — Tokyo",
+    text: "Tokyo कहती है: 'तैयार हो? तुम ही सबसे आगे रहोगे।' Guards का पैटर्न देखते हुए, stealth में आगे बढ़ो।"
+  },
+  {
+    title: "Plan",
+    text: "Briefcase बिल्डिंग के अंदर है। Guards रास्ते में घूमते हैं — उनकी नजर से बचकर briefcase पास जाकर collect करो और exit तक पहुँचो।"
+  },
+  {
+    title: "Final",
+    text: "Mission शुरू करने के लिए 'Next' दबाओ। याद रखो: Lives कम हो गए तो Mission Failed। Luck तुम्हारे साथ हो।"
+  }
+];
+
+/* ========== Setup DOM ========== */
+const storyOverlay = document.getElementById('storyOverlay');
+const storyBox = document.getElementById('storyBox');
+const storyTitle = document.getElementById('storyTitle');
+const storyText = document.getElementById('storyText');
+const storyProgress = document.getElementById('storyProgress');
+const prevStory = document.getElementById('prevStory');
+const nextStory = document.getElementById('nextStory');
+
+const pauseOverlay = document.getElementById('pauseOverlay');
+const pauseTitle = document.getElementById('pauseTitle');
+const pauseText = document.getElementById('pauseText');
+const resumeBtn = document.getElementById('resumeBtn');
+const restartBtn = document.getElementById('restartBtn');
+
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const levelEl = document.getElementById('level');
+const muteBtn = document.getElementById('muteBtn');
+const helpBtn = document.getElementById('helpBtn');
+
+let storyIndex = 0;
+
+/* ========== Story Handlers ========== */
+function showStory(i){
+  storyIndex = Math.max(0, Math.min(i, storyCards.length-1));
+  const c = storyCards[storyIndex];
+  storyTitle.textContent = c.title;
+  storyText.textContent = c.text;
+  storyProgress.textContent = (storyIndex+1) + " / " + storyCards.length;
+  prevStory.disabled = (storyIndex === 0);
+  nextStory.textContent = (storyIndex === storyCards.length-1) ? 'Start Mission' : 'Next';
+}
+prevStory.addEventListener('click', ()=>{ showStory(storyIndex-1); });
+nextStory.addEventListener('click', ()=>{
+  if(storyIndex < storyCards.length-1) { showStory(storyIndex+1); return; }
+  // last card -> start mission
+  storyOverlay.style.display = 'none';
+  startMission();
+});
+
+/* ========== Canvas & Game Setup ========== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const LOG_W = 900, LOG_H = 540;
+canvas.width = LOG_W; canvas.height = LOG_H;
+
+// state
+let score = 0, lives = 3, level = 1, running = false;
+let keys = {};
+let lastTime = 0;
+let guards = [];
+let loot = { x: 600, y: LOG_H/2, w:36, h:28, collected:false };
+
+// simple audio (WebAudio)
+const audioCtx = (typeof AudioContext !== 'undefined') ? new AudioContext() : null;
+let muted = false;
+function playTone(freq, dur=0.12, type='sine', vol=0.06){
+  if(!audioCtx || muted) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  setTimeout(()=>{ try{o.stop()}catch(e){} }, dur*1000 + 30);
+}
+function bgPulse(){
+  if(!audioCtx || muted) return;
+  // gentle suspense pulse (short)
+  playTone(120, 0.35, 'sine', 0.02);
+  setTimeout(()=>{ if(running) bgPulse(); }, 800);
+}
+function sfxCollect(){ playTone(560, 0.12, 'square', 0.08); }
+function sfxHit(){ playTone(160, 0.08, 'sawtooth', 0.09); }
+function sfxLevel(){ playTone(760, 0.16, 'sine', 0.08); }
+
+/* ========== Game Entities ========== */
+const player = { x: 80, y: LOG_H/2 - 28, w:48, h:48, speed:220, vx:0, vy:0, touchTarget:null };
+
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function rectCollide(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+function spawnGuardsForLevel(lv){
+  guards = [];
+  const n = Math.min(6, 2 + lv);
+  for(let i=0;i<n;i++){
+    const gw = 42, gh = 42;
+    const y = 80 + i*( (LOG_H-160)/(Math.max(1,n-1)) );
+    const start = 180 + rand(-30,30);
+    const end = LOG_W - 160 + rand(-30,30);
+    const speed = 60 + rand(0,40) + lv*12;
+    guards.push({ x: start, y: y, w:gw, h:gh, start, end, speed, dir: Math.random()<0.5?1:-1 });
+  }
+}
+
+/* ========== Reset / Start / Next Level ========== */
+function resetAll(){
+  score = 0; lives = 3; level = 1; running = false;
+  player.x = 80; player.y = LOG_H/2 - player.h/2;
+  loot = { x: clamp(rand(LOG_W*0.55, LOG_W-120),260,LOG_W-80), y: rand(80, LOG_H-80), w:36, h:28, collected:false };
+  spawnGuardsForLevel(level);
+  updateHUD();
+}
+function nextLevel(){
+  level++;
+  score += 100; // reward
+  loot = { x: clamp(rand(LOG_W*0.45, LOG_W-120),260,LOG_W-80), y: rand(80, LOG_H-80), w:36, h:28, collected:false };
+  spawnGuardsForLevel(level);
+  sfxLevel();
+  updateHUD();
+}
+function updateHUD(){ document.getElementById('score').textContent = score; document.getElementById('lives').textContent = lives; document.getElementById('level').textContent = level; }
+
+/* ========== Input ========== */
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// touch drag
+let touchActive=false;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchActive = true;
+  const t = e.touches[0];
+  const r = canvas.getBoundingClientRect();
+  player.touchTarget = { x: (t.clientX - r.left) * (LOG_W / r.width), y: (t.clientY - r.top) * (LOG_H / r.height) };
+  if(!running) startMission();
+}, {passive:false});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if(!touchActive) return;
+  const t = e.touches[0];
+  const r = canvas.getBoundingClientRect();
+  player.touchTarget = { x: (t.clientX - r.left) * (LOG_W / r.width), y: (t.clientY - r.top) * (LOG_H / r.height) };
+}, {passive:false});
+
+canvas.addEventListener('touchend', e => { touchActive = false; player.touchTarget = null; });
+
+/* ========== Game Loop ========== */
+function startMission(){
+  running = true;
+  player.x = 80; player.y = LOG_H/2 - player.h/2;
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  bgPulse();
+  spawnGuardsForLevel(level);
+  updateHUD();
+}
+
+function pauseMission(title='Paused', text='') {
+  running = false;
+  pauseTitle.textContent = title;
+  pauseText.textContent = text;
+  pauseOverlay.style.display = 'flex';
+}
+resumeBtn.addEventListener('click', ()=>{ pauseOverlay.style.display='none'; running=true; bgPulse(); });
+restartBtn.addEventListener('click', ()=>{ pauseOverlay.style.display='none'; resetAll(); storyOverlay.style.display='none'; running=true; bgPulse(); });
+
+// help button
+helpBtn.addEventListener('click', ()=>{
+  pauseMission('Help', 'Controls: Arrow / WASD to move. On mobile drag inside canvas. Collect briefcase to progress.');
+});
+
+muteBtn.addEventListener('click', ()=>{
+  muted = !muted;
+  muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+});
+
+/* ========== Update & Render ========== */
+function update(dt){
+  if(!running) return;
+
+  // movement
+  let mx=0,my=0;
+  if(keys['arrowleft']||keys['a']) mx -= 1;
+  if(keys['arrowright']||keys['d']) mx += 1;
+  if(keys['arrowup']||keys['w']) my -= 1;
+  if(keys['arrowdown']||keys['s']) my += 1;
+
+  if(mx !== 0 || my !== 0){
+    const L = Math.hypot(mx,my) || 1;
+    mx /= L; my /= L;
+    player.x += mx * player.speed * dt;
+    player.y += my * player.speed * dt;
+    player.touchTarget = null;
+  } else if(player.touchTarget){
+    // smooth follow touch
+    const tx = player.touchTarget.x - (player.x + player.w/2);
+    const ty = player.touchTarget.y - (player.y + player.h/2);
+    player.x += tx * 6 * dt;
+    player.y += ty * 6 * dt;
+  }
+
+  // clamp
+  player.x = clamp(player.x, 8, LOG_W - player.w - 8);
+  player.y = clamp(player.y, 8, LOG_H - player.h - 8);
+
+  // guards movement + collision
+  for(const g of guards){
+    g.x += g.speed * g.dir * dt;
+    if(g.x < g.start){ g.x = g.start; g.dir *= -1; }
+    if(g.x > g.end){ g.x = g.end; g.dir *= -1; }
+    if(rectCollide(player, g)){
+      // hit
+      sfxHit();
+      lives--; updateHUD();
+      player.x = 80; player.y = LOG_H/2 - player.h/2;
+      if(lives <= 0){
+        running = false;
+        pauseOverlay.style.display = 'flex';
+        pauseTitle.textContent = 'Mission Failed';
+        pauseText.innerHTML = `Final Score: <strong style="color:${getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e63946'}">${score}</strong><br>Reload story to try again.`;
+      }
+    }
+  }
+
+  // collect loot
+  if(!loot.collected && rectCollide(player, loot)){
+    loot.collected = true;
+    score += 200;
+    sfxCollect();
+    updateHUD();
+    // after short delay go next level (story beat)
+    setTimeout(()=>{ nextLevel(); }, 700);
+  }
+
+  // random spawn
+  if(Math.random() < 0.0025) {
+    const y = rand(90, LOG_H-90);
+    guards.push({ x:220, y, w:42, h:42, start:160, end:LOG_W-160, speed: 70 + level*6, dir: Math.random()<0.5?1:-1 });
+  }
+}
+
+function drawRoundedRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath(); ctx.fill();
+}
+
+function render(){
+  // background
+  const g = ctx.createLinearGradient(0,0,0,LOG_H);
+  g.addColorStop(0,'#2a0b10'); g.addColorStop(1,'#0b0608');
+  ctx.fillStyle = g; ctx.fillRect(0,0,LOG_W,LOG_H);
+
+  // grid
+  ctx.fillStyle = 'rgba(255,255,255,0.02)';
+  for(let i=0;i<18;i++) ctx.fillRect(0, i*(LOG_H/18), LOG_W, 1);
+
+  // draw loot (briefcase)
+  if(!loot.collected){
+    ctx.save(); ctx.translate(loot.x, loot.y);
+    ctx.fillStyle = '#d4a017'; drawRoundedRect(0,0,loot.w,loot.h,6);
+    ctx.fillStyle = '#a66a00'; ctx.fillRect(6,loot.h/2 - 4, loot.w - 12, 8);
+    ctx.restore();
+  }
+
+  // guards
+  for(const g of guards){
+    ctx.save(); ctx.translate(g.x, g.y);
+    ctx.fillStyle = '#9aa6b0'; drawRoundedRect(0,0,g.w,g.h,6);
+    ctx.fillStyle = '#03111a'; ctx.fillRect(g.w/2 - 12, 14, 24, 6);
+    ctx.restore();
+  }
+
+  // player mask
+  ctx.save(); ctx.translate(player.x, player.y);
+  ctx.fillStyle = '#e6e6e6'; drawRoundedRect(0,0,player.w,player.h,8);
+  ctx.fillStyle = '#e63946'; ctx.fillRect(8, 14, player.w - 16, 10);
+  ctx.fillStyle = '#06121a'; ctx.fillRect(18, 18, 6, 6); ctx.fillRect(34, 18, 6, 6);
+  ctx.restore();
+
+  // bottom HUD hint
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, LOG_H-42, LOG_W, 42);
+  ctx.fillStyle = '#cfd8e3'; ctx.font = '14px system-ui, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Story Mode • Collect briefcase to progress • Avoid guards', 18, LOG_H-18);
+}
+
+/* ========== Main Loop ========== */
+function loop(ts){
+  const dt = Math.min(0.05, (lastTime ? (ts - lastTime)/1000 : 0.016));
+  lastTime = ts;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ========== Responsive fitting ========== */
+function fitCanvas(){
+  const holder = canvas.parentElement;
+  const styleW = Math.min(holder.clientWidth, 920);
+  canvas.style.width = styleW + 'px';
+  canvas.style.height = (styleW * (LOG_H/LOG_W)) + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+setTimeout(fitCanvas, 60);
+
+/* ========== Init ========== */
+showStory(0);
+resetAll();
+render();
+requestAnimationFrame(loop);
+
+/* ========== Expose small debug (optional) ========== */
+window.__mh_story = { resetAll, startMission, nextLevel };
+</script>
+</body>
+</html>
